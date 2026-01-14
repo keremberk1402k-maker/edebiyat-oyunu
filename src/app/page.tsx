@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { db } from '../lib/firebase';
 import { ref, set, onValue, update, push, get, remove } from "firebase/database";
-import { Player, itemDB, costumeDB, regions, qPool, libraryDB, Stage, Question, Region, Level } from '../lib/gameData';
+import { Player, itemDB, costumeDB, regions, qPool, libraryDB, Question, Region, Level } from '../lib/gameData';git add .
 
 const BASE_WIDTH = 1200;
 const BASE_HEIGHT = 850;
