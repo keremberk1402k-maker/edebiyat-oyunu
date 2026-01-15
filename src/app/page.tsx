@@ -39,6 +39,9 @@ export default function Game() {
   const [showLevelUp, setShowLevelUp] = useState(false);
   const [showWardrobe, setShowWardrobe] = useState(false);
   
+  // YENİ: Çıkış Onay Modalı için State
+  const [confirmAction, setConfirmAction] = useState<'logout' | 'surrender' | null>(null);
+
   const [notification, setNotification] = useState<{msg: string, type: 'success'|'error'} | null>(null);
 
   // --- ONLINE STATE ---
@@ -190,6 +193,42 @@ export default function Game() {
         update(ref(db, 'users/' + p.name), { score: p.score });
     }
     setPlayer({...p});
+  };
+
+  // --- TESLİM OLMA / OYUNU KAYBETME FONKSİYONU ---
+  const forfeitMatch = async () => {
+    if (battle.isArena && roomID && playerSide) {
+        // Karşı tarafı kazanan ilan et
+        const winnerSide = playerSide === 'p1' ? 'p2' : 'p1';
+        await update(ref(db, `arena_rooms/${roomID}`), { 
+            gameOver: true, 
+            winner: winnerSide 
+        });
+        
+        // Kendini mağlup et
+        const np = {...player!}; 
+        np.hp = calcStats(np).maxHp; 
+        saveGame(np);
+    }
+    setBattle(prev => ({...prev, active: false}));
+    setScreen('menu');
+    setConfirmAction(null);
+  };
+
+  // --- ONAY İŞLEMİ ---
+  const executeConfirmAction = async () => {
+    if (confirmAction === 'surrender') {
+        // Sadece arenadan çık, oyunu kaybet
+        await forfeitMatch();
+        notify("Teslim oldun!", "error");
+    } else if (confirmAction === 'logout') {
+        // Eğer arenadaysan önce kaybet, sonra çıkış yap
+        if (battle.isArena && battle.active) {
+            await forfeitMatch();
+        }
+        toggleFullScreen(false);
+        window.location.reload();
+    }
   };
 
   const listenToRoom = (rId: string, side: 'p1' | 'p2') => {
@@ -461,6 +500,24 @@ export default function Game() {
       {showLevelUp && (<div style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.9)', zIndex:100, display:'flex', alignItems:'center', justifyContent:'center'}}><div style={{background:'#111', border:'5px solid #00ff66', padding:'50px', borderRadius:'30px', textAlign:'center', color:'white'}}><h1 style={{fontSize:'60px', color:'#00ff66', margin:0}}>SEVİYE ATLADIN!</h1><button style={{...actionBtnStyle, marginTop:'30px'}} onClick={()=>setShowLevelUp(false)}>DEVAM ET</button></div></div>)}
       {showWardrobe && (<div style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.9)', zIndex:100, display:'flex', alignItems:'center', justifyContent:'center'}}><div style={{width: device==='mobile'?'95%':'800px', height:'700px', background:'#111', border:'4px solid #ffcc00', padding:'30px', borderRadius:'30px', display:'flex', flexDirection:'column', color:'white'}}><h1 style={{fontSize:'40px', color:'#ffcc00', textAlign:'center', margin:0}}>DOLAP</h1><div style={{display:'grid', gridTemplateColumns: device==='mobile'?'1fr 1fr':'1fr 1fr 1fr', gap:'20px', overflowY:'auto', flex:1, padding:'20px'}}>{Object.keys(costumeDB).map(k=>(<div key={k} style={{border:'2px solid #444', padding:'20px', borderRadius:'20px', textAlign:'center', background:player!.currentCostume===k?'#222':'transparent', color:'white'}}><div style={{fontSize:'60px'}}>{costumeDB[k].icon}</div><h3>{costumeDB[k].name}</h3>{player!.unlockedCostumes.includes(k)?<button style={{...btnStyle, background:player!.currentCostume===k?'#00ff66':'#00eaff', color:'black', justifyContent:'center', width:'100%'}} onClick={()=>{saveGame({...player!, currentCostume:k}); setShowWardrobe(false)}}>GİY</button>:<div style={{color:'red', fontWeight:'bold'}}>KİLİTLİ</div>}</div>))}</div><button style={{...dangerBtnStyle, fontSize:'20px', padding:'15px'}} onClick={()=>setShowWardrobe(false)}>KAPAT</button></div></div>)}
       
+      {/* ÇIKIŞ / TESLİM OLMA ONAY MODALI */}
+      {confirmAction && (
+          <div style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.95)', zIndex:9999, display:'flex', alignItems:'center', justifyContent:'center'}}>
+              <div style={{background:'#111', border:'4px solid #ff0055', padding:'30px', borderRadius:'30px', textAlign:'center', color:'white', maxWidth:'500px', width:'90%'}}>
+                  <h2 style={{fontSize:'30px', color:'#ff0055', marginBottom:'20px'}}>EMİN MİSİN?</h2>
+                  <p style={{fontSize:'18px', marginBottom:'30px'}}>
+                      {confirmAction === 'surrender' 
+                          ? 'Savaş devam ederken çıkarsan HÜKMEN MAĞLUP sayılacaksın ve rakibin kazanacak! (Süre işlemeye devam ediyor!)' 
+                          : 'Oyundan çıkış yapmak üzeresin.'}
+                  </p>
+                  <div style={{display:'flex', gap:'20px', justifyContent:'center'}}>
+                      <button style={{...btnStyle, background:'#ff0055', color:'white', border:'none', fontSize:'20px'}} onClick={executeConfirmAction}>EVET, ÇIK</button>
+                      <button style={{...btnStyle, background:'#00ff66', color:'black', border:'none', fontSize:'20px'}} onClick={()=>setConfirmAction(null)}>HAYIR, DÖN</button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       {showRegionModal && selectedRegion && (
           <div style={{position:'fixed', inset:0, background:'rgba(0,0,0,0.9)', zIndex:100, display:'flex', alignItems:'center', justifyContent:'center'}}>
               <div style={{width: device==='mobile'?'95%':'700px', background:'#111', border:'4px solid #00eaff', padding:'30px', borderRadius:'30px', color:'white', textAlign:'center'}}>
@@ -486,7 +543,7 @@ export default function Game() {
       <div style={containerStyle}>
         <div style={{height: device==='mobile'?'60px':'90px', background:'#080808', borderBottom:'1px solid #333', display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 20px'}}>
             <div style={{fontSize: device==='mobile'?'16px':'24px', fontWeight:'bold', display:'flex', gap: device==='mobile'?'10px':'30px'}}><span style={{color:'#ffcc00'}}>⚡ {player?.lvl}</span><span style={{color:'#00ff66'}}>❤️ {player?.hp}/{pStats.maxHp}</span><span style={{color:'#00eaff'}}>💰 {player?.gold}</span></div>
-            <button style={{...dangerBtnStyle, fontSize: device==='mobile'?'12px':'20px', padding: device==='mobile'?'5px 15px':'10px 30px'}} onClick={()=>{toggleFullScreen(false); window.location.reload();}}>ÇIKIŞ</button>
+            <button style={{...dangerBtnStyle, fontSize: device==='mobile'?'12px':'20px', padding: device==='mobile'?'5px 15px':'10px 30px'}} onClick={()=>setConfirmAction('logout')}>ÇIKIŞ</button>
         </div>
 
         <div style={{flex:1, position:'relative', overflow: device==='mobile'?'auto':'hidden', padding: device==='mobile'?'10px':'40px'}}>
@@ -515,6 +572,14 @@ export default function Game() {
                 <div style={{height:'100%', display:'flex', flexDirection:'column', background:`linear-gradient(rgba(0,0,0,0.6), rgba(0,0,0,0.8)), url(${battle.isArena ? (battle.region?.bg || FALLBACK_ARENA_BG) : (battle.region?.bg || battle.level?.ico)}) center/cover`}}>
                     <div style={{flex: device === 'mobile' ? '0 0 auto' : 2, position:'relative', display: device === 'mobile' ? 'flex' : 'grid', flexDirection: device === 'mobile' ? 'column' : 'row', gridTemplateColumns: '1fr 1fr 1fr', justifyContent: 'center', alignItems: device === 'mobile' ? 'center' : 'end', padding: device === 'mobile' ? '10px 0' : '0 50px 20px 50px', gap: device === 'mobile' ? '5px' : '0'}}>
                         {battle.dmgText && <div style={{position:'absolute', left:'50%', top:'30%', fontSize:'80px', fontWeight:'bold', color:battle.dmgText.color, animation:'flyUp 0.8s forwards', zIndex:99}}> -{battle.dmgText.val} </div>}
+                        
+                        {/* TESLİM OL / ÇIK BUTONU (SOL ÜST) */}
+                        <div style={{position:'absolute', top:0, left:0, padding:'20px'}}>
+                            <button style={{...dangerBtnStyle, fontSize:'14px', padding:'10px'}} onClick={() => setConfirmAction('surrender')}>
+                                {battle.isArena ? '🏳️ TESLİM OL' : '❌ ÇIK'}
+                            </button>
+                        </div>
+
                         <div style={{display:'flex', flexDirection:'column', alignItems:'center', width:'100%', order: device==='mobile'?1:3}}>
                             <div style={{background:'black', border:'2px solid white', borderRadius:'15px', height:'20px', width: device==='mobile'?'120px':'220px', marginBottom:'5px', overflow:'hidden', position:'relative'}}><div style={{width:`${(battle.enemyHp/battle.maxEnemyHp)*100}%`, height:'100%', background:'#ff0055', transition:'0.3s'}}></div><span style={{position:'absolute', inset:0, textAlign:'center', fontSize:'12px', fontWeight:'bold'}}>{Math.floor(battle.enemyHp)}</span></div>
                             <div style={{fontSize: device==='mobile'?'80px':'170px', filter:'drop-shadow(0 0 20px black)', lineHeight:'1'}}>{battle.isArena ? '🤺' : battle.level?.ico}</div>
